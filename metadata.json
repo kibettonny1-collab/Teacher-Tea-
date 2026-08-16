@@ -1,0 +1,7 @@
+{
+  "name": "Class Companion",
+  "description": "AI-powered classroom companion for teachers in Thailand with multi-format activity generation, oral testing with speech recognition & TTS, student roster, LINE-integrated homework tracking, vocabulary bank, and gradebook reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

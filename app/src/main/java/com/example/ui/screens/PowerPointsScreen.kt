@@ -276,7 +276,7 @@ fun PowerPointsScreen(
                             FilterChip(
                                 selected = selectedCategory == cat,
                                 onClick = { selectedCategory = if (selectedCategory == cat) null else cat },
-                                label = { Text("${cat.displayName} ($count)", fontSize = 12.sp) },
+                                label = { Text("${cat.icon} ${cat.titleEn} ($count)", fontSize = 12.sp) },
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }
@@ -310,11 +310,16 @@ fun PowerPointsScreen(
             item {
                 SectionHeader(
                     title = "Available Slide Decks (${filteredDecks.size})",
-                    action = if (filteredDecks.size != allDecks.size) "Clear Filters" else null,
-                    onActionClick = {
-                        searchQuery = ""
-                        selectedCategory = null
-                        selectedGrade = null
+                    action = {
+                        if (filteredDecks.size != allDecks.size) {
+                            TextButton(onClick = {
+                                searchQuery = ""
+                                selectedCategory = null
+                                selectedGrade = null
+                            }) {
+                                Text("Clear Filters", fontSize = 12.sp)
+                            }
+                        }
                     }
                 )
             }
@@ -375,7 +380,7 @@ fun PowerPointsScreen(
         PowerPointPresenterDialog(
             deck = deck,
             onDismiss = { presentingDeck = null },
-            onSpeakText = { text -> viewModel.speechManager.speakText(text) },
+            onSpeakText = { text -> viewModel.speechManager.speak(text) },
             onAssignLine = { homeworkContent ->
                 viewModel.sendDirectHomework(homeworkContent)
             }
@@ -571,19 +576,19 @@ private fun PowerPointDeckCard(
                     color = when (deck.category) {
                         PptCategory.GAMES -> CoralRed.copy(alpha = 0.15f)
                         PptCategory.GRAMMAR -> RoyalBlue.copy(alpha = 0.15f)
-                        PptCategory.EXAM_PREP -> ThaiGold.copy(alpha = 0.2f)
+                        PptCategory.ONET_TGAT -> ThaiGold.copy(alpha = 0.2f)
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     }
                 ) {
                     Text(
-                        text = deck.category.displayName,
+                        text = deck.category.titleEn,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = when (deck.category) {
                             PptCategory.GAMES -> CoralRed
                             PptCategory.GRAMMAR -> RoyalBlue
-                            PptCategory.EXAM_PREP -> Color(0xFFB45309)
+                            PptCategory.ONET_TGAT -> Color(0xFFB45309)
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )

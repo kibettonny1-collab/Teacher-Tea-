@@ -26,6 +26,9 @@ class SpeechManager(private val context: Context) : TextToSpeech.OnInitListener 
     private val _spokenText = MutableStateFlow("")
     val spokenText: StateFlow<String> = _spokenText.asStateFlow()
 
+    private val _rmsLevel = MutableStateFlow(0f)
+    val rmsLevel: StateFlow<Float> = _rmsLevel.asStateFlow()
+
     private val _speechError = MutableStateFlow<String?>(null)
     val speechError: StateFlow<String?> = _speechError.asStateFlow()
 
@@ -52,19 +55,25 @@ class SpeechManager(private val context: Context) : TextToSpeech.OnInitListener 
         }
     }
 
-    fun speak(text: String) {
+    fun speak(text: String, speedRate: Float = 0.92f) {
         if (!isTtsReady || tts == null) {
             // Re-attempt init if null
             tts = TextToSpeech(context) { status ->
                 if (status == TextToSpeech.SUCCESS) {
                     tts?.language = Locale.US
+                    tts?.setSpeechRate(speedRate)
                     tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "UtteranceId_${System.currentTimeMillis()}")
                 }
             }
             return
         }
         val cleanText = text.replace(Regex("[()_*\\[\\]]"), " ")
+        tts?.setSpeechRate(speedRate)
         tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null, "UtteranceId_${System.currentTimeMillis()}")
+    }
+
+    fun speakSlow(text: String) {
+        speak(text, speedRate = 0.70f)
     }
 
     fun stopSpeaking() {
@@ -85,40 +94,52 @@ class SpeechManager(private val context: Context) : TextToSpeech.OnInitListener 
                     override fun onReadyForSpeech(params: Bundle?) {
                         _isListening.value = true
                         _speechError.value = null
+                        _rmsLevel.value = 0f
                     }
 
                     override fun onBeginningOfSpeech() {}
-                    override fun onRmsChanged(rmsdB: Float) {}
+
+                    override fun onRmsChanged(rmsdB: Float) {
+                        // Normalize typical dB value (-2 to 10) to 0.0..1.0 for UI visualizer
+                        val normalized = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+                        _rmsLevel.value = normalized
+                    }
+
                     override fun onBufferReceived(buffer: ByteArray?) {}
 
                     override fun onEndOfSpeech() {
                         _isListening.value = false
+                        _rmsLevel.value = 0f
                     }
 
                     override fun onError(error: Int) {
                         _isListening.value = false
+                        _rmsLevel.value = 0f
                         val errorMsg = when (error) {
-                            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-                            SpeechRecognizer.ERROR_CLIENT -> "Client error"
-                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Audio permission needed"
-                            SpeechRecognizer.ERROR_NETWORK -> "Network error"
-                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
-                            SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected"
-                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognition service busy"
-                            SpeechRecognizer.ERROR_SERVER -> "Server error"
-                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech heard"
-                            else -> "Could not capture voice"
+                            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error. Please check microphone."
+                            SpeechRecognizer.ERROR_CLIENT -> "Speech recognition client error."
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is required."
+                            SpeechRecognizer.ERROR_NETWORK -> "Network required for speech-to-text service."
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout. Try speaking again."
+                            SpeechRecognizer.ERROR_NO_MATCH -> "No speech recognized. Please speak closer to the mic."
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognition service busy. Retrying..."
+                            SpeechRecognizer.ERROR_SERVER -> "Voice recognition server error."
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected before timeout."
+                            else -> "Could not capture voice ($error)"
                         }
                         _speechError.value = errorMsg
                     }
 
                     override fun onResults(results: Bundle?) {
                         _isListening.value = false
+                        _rmsLevel.value = 0f
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         val text = matches?.firstOrNull() ?: ""
                         if (text.isNotBlank()) {
                             _spokenText.value = text
                             onResult(text)
+                        } else {
+                            _speechError.value = "No clear words detected. Try again!"
                         }
                     }
 
@@ -139,12 +160,13 @@ class SpeechManager(private val context: Context) : TextToSpeech.OnInitListener 
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-US")
                 putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "en-US")
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
 
             speechRecognizer?.startListening(intent)
         } catch (e: Exception) {
             _isListening.value = false
+            _rmsLevel.value = 0f
             _speechError.value = e.message ?: "Failed to start listening"
         }
     }

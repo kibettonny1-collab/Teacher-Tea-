@@ -99,4 +99,42 @@ class ExampleRobolectricTest {
     assertTrue(searchResults.isNotEmpty())
     assertTrue(searchResults.any { it.id == "rd_chiang_mai_elephant_rescue" })
   }
+
+  @Test
+  fun `test LineShareHelper message formatting for homework`() {
+    val message = com.example.util.LineShareHelper.formatHomeworkMessage(
+      className = "M.1/3",
+      grade = "M.1",
+      lessonTopic = "Present Continuous Challenge",
+      homeworkContent = "Write 5 sentences describing what your family members are doing.",
+      dueDate = "Friday 17:00",
+      joinCode = "M13TH"
+    )
+    assertTrue(message.contains("Class Companion - การบ้านภาษาอังกฤษ"))
+    assertTrue(message.contains("M.1/3 (M.1)"))
+    assertTrue(message.contains("Present Continuous Challenge"))
+    assertTrue(message.contains("Friday 17:00"))
+    assertTrue(message.contains("M13TH"))
+  }
+
+  @Test
+  fun `test LineShareHelper message formatting for student reminder`() {
+    val message = com.example.util.LineShareHelper.formatStudentReminderMessage(
+      studentName = "Somchai",
+      className = "M.1/3",
+      homeworkTopic = "Unit 3 Vocab Worksheet",
+      dueDate = "Tonight 20:00"
+    )
+    assertTrue(message.contains("Somchai"))
+    assertTrue(message.contains("M.1/3"))
+    assertTrue(message.contains("Unit 3 Vocab Worksheet"))
+    assertTrue(message.contains("Tonight 20:00"))
+  }
+
+  @Test
+  fun `test LineShareHelper URL scheme encoding`() {
+    val url = com.example.util.LineShareHelper.getLineUrlScheme("Hello World")
+    assertTrue(url.startsWith("https://line.me/R/msg/text/?"))
+    assertTrue(url.contains("Hello+World") || url.contains("Hello%20World"))
+  }
 }

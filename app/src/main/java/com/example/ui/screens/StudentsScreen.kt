@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -26,10 +29,14 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.InboxMessageEntity
 import com.example.data.model.StudentEntity
 import com.example.ui.ClassCompanionViewModel
+import com.example.ui.components.LineNotificationAlertState
+import com.example.ui.components.LineSimulationScenario
 import com.example.ui.components.QrCodeView
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
+import com.example.util.DataExportHelper
+import com.example.util.LineShareHelper
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -41,6 +48,7 @@ fun StudentsScreen(
     val activeClass by viewModel.activeClass.collectAsState()
     val students by viewModel.studentsInActiveClass.collectAsState()
     val inboxMessages by viewModel.inboxInActiveClass.collectAsState()
+    val context = LocalContext.current
 
     var showAddStudentDialog by remember { mutableStateOf(false) }
     var showQrDialog by remember { mutableStateOf(false) }
@@ -67,7 +75,7 @@ fun StudentsScreen(
                 colors = CardDefaults.cardColors(containerColor = SurfaceCard),
                 border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(BorderLine, RoyalBlueLight)))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -88,37 +96,120 @@ fun StudentsScreen(
                             )
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Button(
-                                onClick = { showLineSimulateDialog = true },
+                                onClick = { viewModel.openCameraQrScanner() },
                                 shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = LineGreen, contentColor = Color.White)
+                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen, contentColor = Color.White),
+                                modifier = Modifier.testTag("scan_roster_qr_btn"),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                             ) {
-                                Text("💬 LINE Login", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Roster QR", modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Scan QR", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
 
                             FilledTonalButton(
                                 onClick = { showQrDialog = true },
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                             ) {
-                                Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("QR Code", fontSize = 12.sp)
+                                Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Join QR", fontSize = 11.sp)
                             }
 
                             Button(
                                 onClick = { showAddStudentDialog = true },
                                 shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
+                                colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                             ) {
-                                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Add", fontSize = 12.sp)
+                                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Add", fontSize = 11.sp)
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    // Roster CSV Export & LINE Actions Bar
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val uri = DataExportHelper.exportStudentRosterCsv(
+                                    context = context,
+                                    className = activeClass?.name ?: "M.1/3",
+                                    grade = activeClass?.grade ?: "M.1",
+                                    joinCode = activeClass?.joinCode ?: "M13TH",
+                                    students = students
+                                )
+                                if (uri != null) {
+                                    Toast.makeText(context, "Exported Student Roster CSV to storage!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Export CSV", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.openLineSimulator(LineSimulationScenario.HOMEWORK)
+                            },
+                            modifier = Modifier.weight(1.1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = LineGreen),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.linearGradient(listOf(LineGreen, EmeraldGreen))),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Text("💬", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("LINE Simulator", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+
+                        Button(
+                            onClick = {
+                                val currentClass = activeClass
+                                if (currentClass != null) {
+                                    LineShareHelper.shareHomework(
+                                        context = context,
+                                        className = currentClass.name,
+                                        grade = currentClass.grade,
+                                        lessonTopic = "Weekly English Assignment",
+                                        homeworkContent = currentClass.homeworkText ?: "Please review lesson vocabulary and submit on Class Companion.",
+                                        dueDate = currentClass.homeworkDue ?: "Tomorrow 17:00",
+                                        joinCode = currentClass.joinCode
+                                    )
+                                    viewModel.triggerLineHeadsUpAlert(
+                                        LineNotificationAlertState(
+                                            senderName = "Class Companion OA (${currentClass.name})",
+                                            title = "📚 English Homework Broadcast",
+                                            messagePreview = currentClass.homeworkText ?: "Please review lesson vocabulary and submit on Class Companion."
+                                        )
+                                    )
+                                }
+                            },
+                            modifier = Modifier.weight(1.1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = LineGreen, contentColor = Color.White),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Text("🟢", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Broadcast", fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                    }
 
                     Row(
                         modifier = Modifier
@@ -258,13 +349,66 @@ fun StudentsScreen(
         // Student List Items
         if (students.isEmpty()) {
             item {
-                Box(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(vertical = 8.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                    border = BorderStroke(1.dp, BorderLine)
                 ) {
-                    Text("No students in this class yet. Tap 'Add' or 'QR Code' to enroll.", color = TextMuted)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(EmeraldGreenLight),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.QrCodeScanner,
+                                contentDescription = null,
+                                tint = EmeraldGreen,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Text(
+                            text = "No Students Enrolled Yet",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = NavyPrimary
+                        )
+                        Text(
+                            text = "Quickly populate your class roster by scanning printed QR codes on student desks, badges, or physical roster sheets.",
+                            style = MaterialTheme.typography.bodySmall.copy(color = TextMuted, textAlign = TextAlign.Center)
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 6.dp)
+                        ) {
+                            Button(
+                                onClick = { viewModel.openCameraQrScanner() },
+                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen, contentColor = Color.White),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.testTag("empty_state_scan_qr_btn")
+                            ) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Scan Roster QR", fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = { showAddStudentDialog = true },
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Add Manually")
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -272,7 +416,19 @@ fun StudentsScreen(
                 StudentRowItem(
                     student = student,
                     onToggleSubmit = { viewModel.toggleStudentSubmission(student.id, student.isSubmitted) },
-                    onSendReminder = { viewModel.sendReminder(student) }
+                    onSendReminder = {
+                        viewModel.sendReminder(student)
+                        viewModel.triggerLineHeadsUpAlert(
+                            LineNotificationAlertState(
+                                senderName = "Class Companion OA (${activeClass?.name ?: "M.1/3"})",
+                                title = "⏰ Homework Due Reminder",
+                                messagePreview = "Sent reminder to ${student.name}: Please finish your assignment on time!"
+                            )
+                        )
+                    },
+                    onSendLineShare = {
+                        viewModel.openLineSimulator(LineSimulationScenario.REMINDER, student)
+                    }
                 )
             }
         }
@@ -382,7 +538,8 @@ fun StudentsScreen(
 private fun StudentRowItem(
     student: StudentEntity,
     onToggleSubmit: () -> Unit,
-    onSendReminder: () -> Unit
+    onSendReminder: () -> Unit,
+    onSendLineShare: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier
@@ -460,12 +617,25 @@ private fun StudentRowItem(
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (!student.isSubmitted) {
-                    IconButton(onClick = onSendReminder) {
-                        Icon(Icons.Default.NotificationsActive, contentDescription = "Remind", tint = CoralRed)
+                    IconButton(
+                        onClick = onSendLineShare,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("🟢", fontSize = 14.sp)
+                    }
+
+                    IconButton(
+                        onClick = onSendReminder,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Default.NotificationsActive, contentDescription = "Remind", tint = CoralRed, modifier = Modifier.size(18.dp))
                     }
                 }
 
-                IconButton(onClick = onToggleSubmit) {
+                IconButton(
+                    onClick = onToggleSubmit,
+                    modifier = Modifier.size(36.dp)
+                ) {
                     Icon(
                         imageVector = if (student.isSubmitted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                         contentDescription = "Toggle status",

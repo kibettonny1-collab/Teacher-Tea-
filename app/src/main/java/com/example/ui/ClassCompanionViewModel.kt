@@ -8,6 +8,13 @@ import com.example.data.database.AppDatabase
 import com.example.data.model.*
 import com.example.data.repository.ClassCompanionRepository
 import com.example.speech.SpeechManager
+import com.example.ui.components.LineNotificationAlertState
+import com.example.ui.components.LineSimulationScenario
+import com.example.util.CuratedVocabWord
+import com.example.util.ParsedStudentInfo
+import com.example.util.PronunciationEvaluator
+import com.example.util.PronunciationRating
+import com.example.util.PronunciationResult
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -108,6 +115,66 @@ class ClassCompanionViewModel(application: Application) : AndroidViewModel(appli
     val trueFalseResult = MutableStateFlow<TrueFalseResult?>(null)
     val openBoxResult = MutableStateFlow<OpenBoxResult?>(null)
 
+    // LINE Simulation & Heads-Up Alert State
+    val lineNotificationAlert = MutableStateFlow<LineNotificationAlertState?>(null)
+    val showLineSimulator = MutableStateFlow(false)
+    val lineSimulatorScenario = MutableStateFlow(LineSimulationScenario.HOMEWORK)
+    val lineSimulatorTargetStudent = MutableStateFlow<StudentEntity?>(null)
+
+    // CameraX QR Code Scanner State
+    val showCameraQrScanner = MutableStateFlow(false)
+
+    // Oral Exam & STT Pronunciation State
+    val oralExamSelectedStudent = MutableStateFlow<StudentEntity?>(null)
+    val oralExamWordList = MutableStateFlow<List<VocabWordEntity>>(emptyList())
+    val oralExamCurrentIndex = MutableStateFlow(0)
+    val oralExamResults = MutableStateFlow<Map<String, PronunciationResult>>(emptyMap()) // vocabId/word -> PronunciationResult
+    val isOralExamActive = MutableStateFlow(false)
+    val isOralExamCompleted = MutableStateFlow(false)
+    val oralExamSelectedGradeDeck = MutableStateFlow("M.1")
+
+    fun openCameraQrScanner() {
+        showCameraQrScanner.value = true
+    }
+
+    fun closeCameraQrScanner() {
+        showCameraQrScanner.value = false
+    }
+
+    fun openLineSimulator(
+        scenario: LineSimulationScenario = LineSimulationScenario.HOMEWORK,
+        targetStudent: StudentEntity? = null
+    ) {
+        lineSimulatorScenario.value = scenario
+        lineSimulatorTargetStudent.value = targetStudent
+        showLineSimulator.value = true
+    }
+
+    fun closeLineSimulator() {
+        showLineSimulator.value = false
+    }
+
+    fun triggerLineHeadsUpAlert(alert: LineNotificationAlertState) {
+        lineNotificationAlert.value = alert
+    }
+
+    fun clearLineHeadsUpAlert() {
+        lineNotificationAlert.value = null
+    }
+
+    fun sendMessage(studentId: String, studentName: String, text: String, type: String = "line_reply") {
+        val cls = activeClass.value ?: return
+        viewModelScope.launch {
+            repository.sendMessage(
+                classId = cls.id,
+                studentId = studentId,
+                studentName = studentName,
+                text = text,
+                type = type
+            )
+        }
+    }
+
     fun selectClass(classId: String) {
         _selectedClassId.value = classId
         viewModelScope.launch {
@@ -150,6 +217,70 @@ class ClassCompanionViewModel(application: Application) : AndroidViewModel(appli
             val lineId = if (lineLinked) "U" + (10000000..99999999).random().toString() else null
             repository.addStudent(cls.id, name, lineLinked, lineId)
             toastMessage.emit(if (lineLinked) "$name connected via LINE!" else "Student $name added!")
+        }
+    }
+
+    fun addScannedStudent(
+        name: String,
+        lineId: String? = null,
+        onSuccess: (() -> Unit)? = null
+    ) {
+        val cls = activeClass.value ?: return
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return
+        val isDuplicate = studentsInActiveClass.value.any { it.name.trim().equals(cleanName, ignoreCase = true) }
+        if (isDuplicate) {
+            viewModelScope.launch {
+                toastMessage.emit("⚠️ $cleanName is already enrolled in ${cls.name}")
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            repository.addStudent(
+                classId = cls.id,
+                name = cleanName,
+                lineLinked = lineId != null,
+                lineUserId = lineId
+            )
+            toastMessage.emit("✅ Added $cleanName to ${cls.name} via QR scan!")
+            onSuccess?.invoke()
+        }
+    }
+
+    fun addBatchStudentsFromQr(
+        students: List<ParsedStudentInfo>,
+        onComplete: ((addedCount: Int, skippedCount: Int) -> Unit)? = null
+    ) {
+        val cls = activeClass.value ?: return
+        viewModelScope.launch {
+            var added = 0
+            var skipped = 0
+            val existing = studentsInActiveClass.value.map { it.name.trim().lowercase() }.toSet()
+
+            for (studentInfo in students) {
+                val cleanName = studentInfo.name.trim()
+                if (cleanName.isBlank()) continue
+                if (existing.contains(cleanName.lowercase())) {
+                    skipped++
+                    continue
+                }
+                val lineId = studentInfo.lineId
+                repository.addStudent(
+                    classId = cls.id,
+                    name = cleanName,
+                    lineLinked = lineId != null,
+                    lineUserId = lineId
+                )
+                added++
+            }
+
+            if (added > 0) {
+                toastMessage.emit("✅ Successfully added $added student(s) from QR scan to ${cls.name}!")
+            } else if (skipped > 0) {
+                toastMessage.emit("All $skipped scanned students already exist in ${cls.name}.")
+            }
+            onComplete?.invoke(added, skipped)
         }
     }
 
@@ -488,6 +619,224 @@ class ClassCompanionViewModel(application: Application) : AndroidViewModel(appli
             repository.resetAllData()
             repository.seedSampleDataIfNeeded()
             toastMessage.emit("Reset to starter sample data.")
+        }
+    }
+
+    // Oral Exam & STT Pronunciation Engine Functions
+    fun startOralExamWithVocabBank(
+        student: StudentEntity? = null,
+        count: Int? = null,
+        customWords: List<VocabWordEntity>? = null,
+        shuffle: Boolean = false
+    ) {
+        val baseWords = when {
+            !customWords.isNullOrEmpty() -> customWords
+            vocabInActiveClass.value.isNotEmpty() -> vocabInActiveClass.value
+            else -> {
+                // Fallback to Curated M.1 / Active Grade Vocab
+                val grade = activeClass.value?.grade ?: "M.1"
+                val filteredCurated = PronunciationEvaluator.CURATED_VOCAB_BANK.filter { it.grade.equals(grade, ignoreCase = true) }
+                    .ifEmpty { PronunciationEvaluator.CURATED_VOCAB_BANK }
+                filteredCurated.map {
+                    VocabWordEntity(
+                        classId = activeClass.value?.id ?: "cls_default",
+                        en = it.en,
+                        th = it.th,
+                        example = it.example
+                    )
+                }
+            }
+        }
+
+        val processedWords = if (shuffle) baseWords.shuffled() else baseWords
+        val selectedWords = if (count != null && count > 0) processedWords.take(count) else processedWords
+
+        if (selectedWords.isEmpty()) {
+            viewModelScope.launch {
+                toastMessage.emit("No vocabulary words available for the exam. Add words to the bank first!")
+            }
+            return
+        }
+
+        oralExamSelectedStudent.value = student
+        oralExamWordList.value = selectedWords
+        oralExamCurrentIndex.value = 0
+        oralExamResults.value = emptyMap()
+        isOralExamActive.value = true
+        isOralExamCompleted.value = false
+
+        // Automatically pronounce the first target word for audio modeling
+        selectedWords.firstOrNull()?.let { firstWord ->
+            speechManager.speak(firstWord.en)
+        }
+    }
+
+    fun evaluateAndRecordPronunciation(spokenTranscript: String) {
+        val words = oralExamWordList.value
+        val currentIndex = oralExamCurrentIndex.value
+        if (currentIndex !in words.indices) return
+
+        val currentWord = words[currentIndex]
+        val result = PronunciationEvaluator.evaluate(
+            targetWord = currentWord.en,
+            spokenTranscript = spokenTranscript,
+            targetExample = currentWord.example
+        )
+
+        val updatedMap = oralExamResults.value.toMutableMap()
+        updatedMap[currentWord.id.ifBlank { currentWord.en }] = result
+        oralExamResults.value = updatedMap
+
+        viewModelScope.launch {
+            if (result.rating == PronunciationRating.PERFECT) {
+                toastMessage.emit("🌟 100% Perfect! '${currentWord.en}'")
+            } else if (result.rating == PronunciationRating.GOOD) {
+                toastMessage.emit("👍 Good job! (${result.scorePercentage}%)")
+            } else {
+                toastMessage.emit("${result.rating.title}: ${result.scorePercentage}%")
+            }
+        }
+    }
+
+    fun nextOralExamWord() {
+        val words = oralExamWordList.value
+        val currentIndex = oralExamCurrentIndex.value
+        if (currentIndex < words.size - 1) {
+            val nextIdx = currentIndex + 1
+            oralExamCurrentIndex.value = nextIdx
+            val nextWord = words[nextIdx]
+            speechManager.speak(nextWord.en)
+        } else {
+            finishOralExam()
+        }
+    }
+
+    fun prevOralExamWord() {
+        val currentIndex = oralExamCurrentIndex.value
+        if (currentIndex > 0) {
+            val prevIdx = currentIndex - 1
+            oralExamCurrentIndex.value = prevIdx
+            val prevWord = oralExamWordList.value[prevIdx]
+            speechManager.speak(prevWord.en)
+        }
+    }
+
+    fun jumpToOralExamWord(index: Int) {
+        val words = oralExamWordList.value
+        if (index in words.indices) {
+            oralExamCurrentIndex.value = index
+            speechManager.speak(words[index].en)
+        }
+    }
+
+    fun finishOralExam() {
+        isOralExamActive.value = false
+        isOralExamCompleted.value = true
+        val results = oralExamResults.value
+        val words = oralExamWordList.value
+        val avgScore = if (results.isNotEmpty()) {
+            results.values.map { it.scorePoints }.average()
+        } else 0.0
+
+        viewModelScope.launch {
+            toastMessage.emit("🎉 Oral Exam Completed! Average Score: ${String.format("%.1f", avgScore)} / 10")
+        }
+    }
+
+    fun restartOralExam() {
+        val student = oralExamSelectedStudent.value
+        val words = oralExamWordList.value
+        startOralExamWithVocabBank(student = student, customWords = words)
+    }
+
+    fun saveOralExamScoreToAssessments(customTitle: String? = null) {
+        val cls = activeClass.value ?: return
+        val results = oralExamResults.value
+        val words = oralExamWordList.value
+        if (words.isEmpty()) return
+
+        val totalPoints = results.values.sumOf { it.scorePoints.toDouble() }.toFloat()
+        val maxPoints = (words.size * 10).toFloat()
+        // Normalized 10-point scale
+        val scaledScore = if (words.isNotEmpty()) (totalPoints / words.size) else 0f
+
+        val student = oralExamSelectedStudent.value
+        val title = customTitle ?: "Oral Exam: Vocab Pronunciation (${words.size} words)"
+
+        viewModelScope.launch {
+            val scoreMap = mutableMapOf<String, Pair<String, Float>>()
+            if (student != null) {
+                scoreMap[student.id] = student.name to scaledScore
+            } else {
+                studentsInActiveClass.value.forEach { s ->
+                    scoreMap[s.id] = s.name to scaledScore
+                }
+            }
+
+            repository.createAssessment(
+                classId = cls.id,
+                title = title,
+                maxScore = 10f,
+                scores = scoreMap
+            )
+            toastMessage.emit("✅ Saved score (${String.format("%.1f", scaledScore)}/10) to Gradebook for ${student?.name ?: "all students"}!")
+        }
+    }
+
+    fun sendOralExamResultToLine(student: StudentEntity) {
+        val cls = activeClass.value ?: return
+        val results = oralExamResults.value
+        val words = oralExamWordList.value
+        val count = words.size
+        val passedCount = results.values.count { it.isPassed }
+        val avgScore = if (results.isNotEmpty()) results.values.map { it.scorePoints }.average() else 0.0
+
+        val topWords = words.take(4).joinToString(", ") { it.en }
+        val messageText = "🎙️ Oral Pronunciation Exam Result for ${student.name}\n" +
+                "📚 Class: ${cls.name} (${cls.grade})\n" +
+                "⭐ Final Score: ${String.format("%.1f", avgScore)} / 10 (Passed $passedCount/$count words)\n" +
+                "🔤 Words tested: $topWords\n" +
+                "💡 Practice tip: Use the speech assistant to practice syllable endings and stress."
+
+        viewModelScope.launch {
+            repository.sendMessage(
+                classId = cls.id,
+                studentId = student.id,
+                studentName = student.name,
+                text = messageText,
+                type = "oral_exam_report"
+            )
+
+            // Also trigger simulation heads-up alert
+            triggerLineHeadsUpAlert(
+                LineNotificationAlertState(
+                    title = "LINE Notification: Oral Exam Score",
+                    senderName = "Teacher (${userSettings.value?.teacherName ?: "Ajarn"})",
+                    message = "Sent ${student.name}'s pronunciation scorecard (${String.format("%.1f", avgScore)}/10) via LINE!",
+                    badge = "Oral Exam"
+                )
+            )
+            toastMessage.emit("💬 Oral Exam result sent to ${student.name}'s LINE!")
+        }
+    }
+
+    fun importCuratedDeckToClassVocab(grade: String) {
+        val cls = activeClass.value ?: return
+        val curated = PronunciationEvaluator.CURATED_VOCAB_BANK.filter { it.grade.equals(grade, ignoreCase = true) }
+        if (curated.isEmpty()) return
+
+        val vocabEntities = curated.map {
+            VocabWordEntity(
+                classId = cls.id,
+                en = it.en,
+                th = it.th,
+                example = it.example
+            )
+        }
+
+        viewModelScope.launch {
+            repository.addVocabWords(vocabEntities)
+            toastMessage.emit("📥 Imported ${curated.size} $grade curated vocabulary words to ${cls.name}!")
         }
     }
 

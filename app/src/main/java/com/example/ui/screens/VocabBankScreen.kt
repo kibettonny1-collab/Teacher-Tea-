@@ -81,14 +81,29 @@ fun VocabBankScreen(
                             )
                         }
 
-                        Button(
-                            onClick = { showAddDialog = true },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add Word", fontSize = 12.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    viewModel.startOralExamWithVocabBank()
+                                    viewModel.currentScreen.value = "speaktest"
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = ThaiGoldDark)
+                            ) {
+                                Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Oral Exam", fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = { showAddDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Word", fontSize = 12.sp)
+                            }
                         }
                     }
 
@@ -170,6 +185,10 @@ fun VocabBankScreen(
                 VocabItemCard(
                     item = item,
                     onSpeak = { viewModel.speechManager.speak(item.en) },
+                    onTestVoice = {
+                        viewModel.startOralExamWithVocabBank(customWords = listOf(item))
+                        viewModel.currentScreen.value = "speaktest"
+                    },
                     onDelete = { viewModel.deleteVocabWord(item.id) }
                 )
             }
@@ -191,6 +210,7 @@ fun VocabBankScreen(
 private fun VocabItemCard(
     item: VocabWordEntity,
     onSpeak: () -> Unit,
+    onTestVoice: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -236,9 +256,12 @@ private fun VocabItemCard(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onSpeak) {
                     Icon(Icons.Default.VolumeUp, contentDescription = "Pronounce", tint = RoyalBlue)
+                }
+                IconButton(onClick = onTestVoice) {
+                    Icon(Icons.Default.Mic, contentDescription = "Test Voice", tint = ThaiGoldDark)
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = TextMuted)

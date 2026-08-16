@@ -4,6 +4,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -21,6 +22,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.AppStrings
+import com.example.ui.components.CameraQrScannerDialog
+import com.example.ui.components.GoogleDriveBackupDialog
+import com.example.ui.components.LineMessageSimulatorDialog
+import com.example.ui.components.LineNotificationAlertBanner
+import com.example.ui.components.LineSimulationScenario
 import com.example.ui.components.ThaiFlagRibbon
 import com.example.ui.screens.*
 import com.example.ui.theme.*
@@ -36,6 +42,7 @@ data class NavDestination(
 val NAV_ITEMS = listOf(
     NavDestination("home", "home", Icons.Filled.Home, Icons.Outlined.Home),
     NavDestination("companion", "companion", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome),
+    NavDestination("powerpoints", "powerpoints", Icons.Filled.PresentToAll, Icons.Outlined.PresentToAll),
     NavDestination("worksheets", "worksheets", Icons.Filled.CollectionsBookmark, Icons.Outlined.CollectionsBookmark),
     NavDestination("students", "students", Icons.Filled.People, Icons.Outlined.People),
     NavDestination("vocab", "vocab", Icons.Filled.MenuBook, Icons.Outlined.MenuBook),
@@ -59,6 +66,14 @@ fun MainAppLayout(
 
     val snackbarHostState = remember { SnackbarHostState() }
     var showClassMenu by remember { mutableStateOf(false) }
+    var showCloudBackupDialog by remember { mutableStateOf(false) }
+
+    val showLineSimulator by viewModel.showLineSimulator.collectAsState()
+    val lineSimulatorScenario by viewModel.lineSimulatorScenario.collectAsState()
+    val lineSimulatorTargetStudent by viewModel.lineSimulatorTargetStudent.collectAsState()
+    val lineNotificationAlert by viewModel.lineNotificationAlert.collectAsState()
+    val showCameraQrScanner by viewModel.showCameraQrScanner.collectAsState()
+    val studentsInActiveClass by viewModel.studentsInActiveClass.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.toastMessage.collectLatest { msg ->
@@ -69,6 +84,34 @@ fun MainAppLayout(
     if (userSettings == null || (userSettings?.teacherName.isNullOrBlank() && userSettings?.schoolName.isNullOrBlank())) {
         RoleSetupScreen(viewModel = viewModel)
         return
+    }
+
+    if (showCloudBackupDialog) {
+        GoogleDriveBackupDialog(
+            viewModel = viewModel,
+            onDismiss = { showCloudBackupDialog = false }
+        )
+    }
+
+    if (showCameraQrScanner) {
+        CameraQrScannerDialog(
+            viewModel = viewModel,
+            activeClass = activeClass,
+            existingStudents = studentsInActiveClass,
+            onDismiss = { viewModel.closeCameraQrScanner() }
+        )
+    }
+
+    if (showLineSimulator) {
+        LineMessageSimulatorDialog(
+            viewModel = viewModel,
+            initialScenario = lineSimulatorScenario,
+            preselectedStudent = lineSimulatorTargetStudent,
+            onDismiss = { viewModel.closeLineSimulator() },
+            onTriggerHeadsUpAlert = { alert ->
+                viewModel.triggerLineHeadsUpAlert(alert)
+            }
+        )
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -112,6 +155,51 @@ fun MainAppLayout(
                     }
                 },
                 actions = {
+                    // LINE Simulator Action Button
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = LineGreenLight,
+                        border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(LineGreen, EmeraldGreen))),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { viewModel.openLineSimulator(LineSimulationScenario.HOMEWORK) }
+                            .testTag("top_bar_line_simulator_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .background(LineGreen),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("L", color = Color.White, fontWeight = FontWeight.Black, fontSize = 8.sp)
+                            }
+                            Text(
+                                text = "LINE Sim",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = LineGreen
+                            )
+                        }
+                    }
+
+                    // Google Drive & Cloud Backup Action
+                    IconButton(
+                        onClick = { showCloudBackupDialog = true },
+                        modifier = Modifier.testTag("top_bar_cloud_backup_btn")
+                    ) {
+                        Icon(
+                            Icons.Default.CloudSync,
+                            contentDescription = "Google Drive & Cloud Backup",
+                            tint = RoyalBlue
+                        )
+                    }
+
                     // Class selector badge / dropdown
                     Box {
                         Surface(
@@ -197,10 +285,10 @@ fun MainAppLayout(
                     val visibleItems = listOf(
                         NAV_ITEMS[0], // Home
                         NAV_ITEMS[1], // Companion
-                        NAV_ITEMS[2], // Worksheets
-                        NAV_ITEMS[3], // Students
-                        NAV_ITEMS[4], // Vocab
-                        NAV_ITEMS[5]  // Assess
+                        NAV_ITEMS[5], // Vocab Bank
+                        NAV_ITEMS[7], // Oral Exam (STT)
+                        NAV_ITEMS[4], // Students
+                        NAV_ITEMS[8]  // Reports
                     )
                     visibleItems.forEach { item ->
                         val isSelected = currentScreen == item.id
@@ -290,11 +378,13 @@ fun MainAppLayout(
                     when (screen) {
                         "home" -> HomeScreen(viewModel = viewModel)
                         "companion" -> CompanionScreen(viewModel = viewModel)
+                        "powerpoints" -> PowerPointsScreen(viewModel = viewModel, onBack = { viewModel.currentScreen.value = "home" })
                         "worksheets" -> WorksheetsScreen(viewModel = viewModel)
                         "students" -> StudentsScreen(viewModel = viewModel)
                         "vocab" -> VocabBankScreen(viewModel = viewModel)
                         "assess" -> AssessmentScreen(viewModel = viewModel)
-                        "speaktest" -> SpeakTestTopicsScreen(viewModel = viewModel)
+                        "speaktest" -> OralExamScreen(viewModel = viewModel)
+                        "oralexam" -> OralExamScreen(viewModel = viewModel)
                         "reports" -> ReportsScreen(viewModel = viewModel)
                         "settings" -> SettingsScreen(viewModel = viewModel)
                         else -> HomeScreen(viewModel = viewModel)
@@ -302,6 +392,21 @@ fun MainAppLayout(
                 }
             }
         }
+
+        // Heads-Up LINE Push Notification Banner (Floats over all screens)
+        LineNotificationAlertBanner(
+            alert = lineNotificationAlert,
+            onDismiss = { viewModel.clearLineHeadsUpAlert() },
+            onClick = {
+                viewModel.openLineSimulator(
+                    scenario = lineSimulatorScenario,
+                    targetStudent = lineSimulatorTargetStudent
+                )
+                viewModel.clearLineHeadsUpAlert()
+            },
+            onSpeak = { text -> viewModel.speechManager.speak(text) },
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
 }
 }

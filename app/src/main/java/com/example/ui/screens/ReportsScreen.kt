@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,9 +24,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.ClassCompanionViewModel
+import com.example.ui.components.GoogleDriveBackupDialog
+import com.example.ui.components.LineNotificationAlertState
+import com.example.ui.components.LineSimulationScenario
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
+import com.example.util.DataExportHelper
+import com.example.util.LineShareHelper
 
 @Composable
 fun ReportsScreen(
@@ -37,9 +43,15 @@ fun ReportsScreen(
     val allLogs by viewModel.allLogs.collectAsState()
     val allAssessments by viewModel.allAssessments.collectAsState()
     val allScores by viewModel.allScores.collectAsState()
+    val activeClass by viewModel.activeClass.collectAsState()
     val context = LocalContext.current
 
     var selectedPeriod by remember { mutableStateOf("All Time") }
+    var showDriveDialog by remember { mutableStateOf(false) }
+
+    if (showDriveDialog) {
+        GoogleDriveBackupDialog(viewModel = viewModel, onDismiss = { showDriveDialog = false })
+    }
 
     val oneWeekAgo = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
     val oneMonthAgo = System.currentTimeMillis() - (30 * 24 * 60 * 60 * 1000L)
@@ -71,7 +83,7 @@ fun ReportsScreen(
                 colors = CardDefaults.cardColors(containerColor = SurfaceCard),
                 border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(BorderLine, RoyalBlueLight)))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -84,7 +96,7 @@ fun ReportsScreen(
                                 color = RoyalBlue
                             )
                             Text(
-                                text = "Engagement & Performance",
+                                text = "Engagement & Gradebook",
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = NavyPrimary
@@ -92,32 +104,108 @@ fun ReportsScreen(
                             )
                         }
 
-                        Button(
-                            onClick = {
-                                val csv = buildString {
-                                    appendLine("Class Companion Gradebook & Activity Report")
-                                    appendLine("Class,Total Students,Submitted Homework,Recorded Assessments,Generated Activities")
-                                    classes.forEach { cls ->
-                                        val sCount = allStudents.count { it.classId == cls.id }
-                                        val subCount = allStudents.count { it.classId == cls.id && it.isSubmitted }
-                                        val aCount = allAssessments.count { it.classId == cls.id }
-                                        val gCount = allLogs.count { it.classId == cls.id }
-                                        appendLine("${cls.name},$sCount,$subCount,$aCount,$gCount")
-                                    }
-                                }
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Gradebook_Report", csv))
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
+                        IconButton(
+                            onClick = { showDriveDialog = true },
+                            modifier = Modifier.testTag("reports_cloud_drive_btn")
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Export CSV", fontSize = 12.sp)
+                            Icon(Icons.Default.CloudUpload, contentDescription = "Google Drive", tint = RoyalBlue)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    // Export Action Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val currentClass = activeClass ?: classes.firstOrNull()
+                                val className = currentClass?.name ?: "All_Classes"
+                                val classStudents = allStudents.filter { currentClass == null || it.classId == currentClass.id }
+                                val classAssessments = allAssessments.filter { currentClass == null || it.classId == currentClass.id }
+                                val classScores = allScores.filter { s -> classAssessments.any { it.id == s.assessmentId } }
+
+                                val uri = DataExportHelper.exportGradebookCsv(
+                                    context = context,
+                                    className = className,
+                                    assessments = classAssessments,
+                                    scores = classScores,
+                                    students = classStudents
+                                )
+                                if (uri != null) {
+                                    Toast.makeText(context, "Exported Gradebook CSV to storage!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("CSV", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.openLineSimulator(LineSimulationScenario.GRADEBOOK)
+                            },
+                            modifier = Modifier.weight(1.1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = LineGreen),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.linearGradient(listOf(LineGreen, EmeraldGreen))),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Text("💬", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("LINE Sim", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                val currentClass = activeClass ?: classes.firstOrNull()
+                                val className = currentClass?.name ?: "M.1/3"
+                                val classScores = allScores.filter { s -> (activeClass == null || allAssessments.any { a -> a.id == s.assessmentId && a.classId == currentClass?.id }) }
+                                val avg = if (classScores.isNotEmpty()) classScores.map { it.score }.average().toFloat() else 8.5f
+                                val totalStudents = if (activeClass != null) allStudents.count { it.classId == currentClass?.id } else allStudents.size
+                                val subCount = if (activeClass != null) allStudents.count { it.classId == currentClass?.id && it.isSubmitted } else allStudents.count { it.isSubmitted }
+
+                                LineShareHelper.shareGradebookReport(
+                                    context = context,
+                                    className = className,
+                                    assessmentTitle = "Weekly Gradebook & Unit Quiz",
+                                    avgScore = avg,
+                                    maxScore = 10f,
+                                    totalStudents = totalStudents,
+                                    submittedCount = subCount
+                                )
+                                viewModel.triggerLineHeadsUpAlert(
+                                    LineNotificationAlertState(
+                                        senderName = "Class Companion OA ($className)",
+                                        title = "📊 Gradebook Summary Broadcast",
+                                        messagePreview = "Assessment average: ${String.format("%.1f", avg)}/10.0 | Submitted: $subCount/$totalStudents"
+                                    )
+                                )
+                            },
+                            modifier = Modifier.weight(1.1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = LineGreen, contentColor = Color.White),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+                        ) {
+                            Text("🟢", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Broadcast", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { showDriveDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = RoyalBlue),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                    }
 
                     // Period Filter Chips
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

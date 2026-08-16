@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -26,10 +27,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.ui.ClassCompanionViewModel
+import com.example.ui.components.LineNotificationAlertState
+import com.example.ui.components.LineSimulationScenario
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusBadge
 import com.example.ui.components.ThaiFlagRibbon
 import com.example.ui.theme.*
+import com.example.util.LineShareHelper
 
 @Composable
 fun HomeScreen(
@@ -42,6 +46,7 @@ fun HomeScreen(
     val activeClass by viewModel.activeClass.collectAsState()
     val settings by viewModel.userSettings.collectAsState()
     val lang = settings?.language ?: "en"
+    val context = LocalContext.current
 
     val pendingCount = classes.sumOf { cls ->
         if (cls.homeworkText != null) {
@@ -216,7 +221,103 @@ fun HomeScreen(
                         ) {
                             Text("📚", fontSize = 14.sp)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Worksheets Hub", style = MaterialTheme.typography.labelLarge, color = NavyPrimary, fontWeight = FontWeight.Bold)
+                            Text("Worksheets", style = MaterialTheme.typography.labelLarge, color = NavyPrimary, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { viewModel.currentScreen.value = "powerpoints" },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("home_powerpoints_btn"),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = RoyalBlue,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(Icons.Default.PresentToAll, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("PPT", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // PowerPoint Presentations & Smartboard Games Hub Card
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.currentScreen.value = "powerpoints" }
+                    .testTag("home_ppt_hero_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(ThaiGold, RoyalBlue)))
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(ThaiGoldLight),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🖥️", fontSize = 22.sp)
+                            }
+                            Column {
+                                Text(
+                                    text = "iSLCollective PowerPoint Presentations & Games",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold, color = NavyPrimary)
+                                )
+                                Text(
+                                    text = "สไลด์การสอน PPT & เกมตอบคำถาม Smartboard จอใหญ่",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = TextMuted)
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "Interactive presentation decks designed for Thai secondary classrooms (M.1–M.6), including Game Shows, Grammar Quests, Speed Warm-ups, and Mystery Wordwalls with timer & sounds.",
+                        style = MaterialTheme.typography.bodySmall.copy(color = TextInk)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.currentScreen.value = "powerpoints" },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
+                        ) {
+                            Icon(Icons.Default.PresentToAll, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Open PowerPoint Hub", fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.openLineSimulator(LineSimulationScenario.GAME_PIN)
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = EmeraldGreen),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.linearGradient(listOf(EmeraldGreen, RoyalBlue)))
+                        ) {
+                            Text("🟢", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Simulate & Share PIN", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -232,35 +333,91 @@ fun HomeScreen(
                     colors = CardDefaults.cardColors(containerColor = CoralRedLight),
                     border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(CoralRed, ThaiGold)))
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = CoralRed)
-                            Column {
-                                Text(
-                                    text = "Needs Attention · รอดำเนินการ",
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = CoralRed
-                                )
-                                Text(
-                                    text = "$pendingCount student(s) haven't submitted current homework",
-                                    style = MaterialTheme.typography.bodySmall.copy(color = TextInk)
-                                )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = CoralRed)
+                                Column {
+                                    Text(
+                                        text = "Needs Attention · รอดำเนินการ",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = CoralRed
+                                    )
+                                    Text(
+                                        text = "$pendingCount student(s) haven't submitted current homework",
+                                        style = MaterialTheme.typography.bodySmall.copy(color = TextInk)
+                                    )
+                                }
+                            }
+                            TextButton(
+                                onClick = { viewModel.currentScreen.value = "students" },
+                                colors = ButtonDefaults.textButtonColors(contentColor = CoralRed)
+                            ) {
+                                Text("View Roster", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
                             }
                         }
-                        TextButton(
-                            onClick = { viewModel.currentScreen.value = "students" },
-                            colors = ButtonDefaults.textButtonColors(contentColor = CoralRed)
+
+                        // Direct LINE Broadcast & Simulator Buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("View Roster", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.openLineSimulator(LineSimulationScenario.REMINDER)
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = NavyPrimary)
+                            ) {
+                                Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("LINE Simulator", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                            }
+
+                            Button(
+                                onClick = {
+                                    val currentClass = activeClass ?: classes.firstOrNull()
+                                    if (currentClass != null) {
+                                        LineShareHelper.shareHomework(
+                                            context = context,
+                                            className = currentClass.name,
+                                            grade = currentClass.grade,
+                                            lessonTopic = "English Homework Reminder",
+                                            homeworkContent = currentClass.homeworkText ?: "Please review this week's vocabulary and complete the practice worksheet.",
+                                            dueDate = currentClass.homeworkDue ?: "Tomorrow 17:00",
+                                            joinCode = currentClass.joinCode
+                                        )
+                                        viewModel.triggerLineHeadsUpAlert(
+                                            LineNotificationAlertState(
+                                                senderName = "Class Companion OA (${currentClass.name})",
+                                                title = "⏰ Homework Reminder Broadcast",
+                                                messagePreview = "Reminder sent to all $pendingCount pending students in ${currentClass.name} via LINE!"
+                                            )
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.weight(1.2f),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = LineGreen, contentColor = Color.White),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text("🟢", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Broadcast Reminder", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1)
+                            }
                         }
                     }
                 }
